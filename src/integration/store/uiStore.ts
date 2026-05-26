@@ -3,6 +3,7 @@ import { getAllAgents } from '../../data/agents';
 import { AgentState, CharacterState } from '../../types';
 import { useTeamStore, getActiveAgentSet } from './teamStore';
 import { DEFAULT_MODELS } from '../../core/llm/constants';
+import { AVAILABLE_MODELS } from '../../core/llm/constants';
 
 export const useUiStore = create<CharacterState>()(
   (set) => ({
@@ -30,16 +31,52 @@ export const useUiStore = create<CharacterState>()(
     setBYOKOpen: (open: boolean, error: string | null = null) =>
       set({ isBYOKOpen: open, byokError: error }),
 
+    isGitHubOpen: false,
+    setGitHubOpen: (open: boolean) => set({ isGitHubOpen: open }),
+
+    githubConfig: (() => {
+      try {
+        const saved = localStorage.getItem('github-config');
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          return {
+            token: parsed.token || '',
+            repo: parsed.repo || '',
+            baseBranch: parsed.baseBranch || 'main',
+          };
+        }
+      } catch { }
+      return { token: '', repo: '', baseBranch: 'main' };
+    })(),
+
+    setGitHubConfig: (config) => set((s) => ({ githubConfig: { ...s.githubConfig, ...config } })),
+
     activeAuditTaskId: null,
     setActiveAuditTaskId: (taskId: string | null) => set({ activeAuditTaskId: taskId }),
 
     llmConfig: (() => {
       try {
         const saved = localStorage.getItem('byok-config');
-        if (saved) return JSON.parse(saved);
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          const provider = 'deepseek';
+          const defaultBaseUrl = 'https://api.deepseek.com';
+          const rawBaseUrl = typeof parsed.baseUrl === 'string' ? parsed.baseUrl : '';
+          const baseUrl = rawBaseUrl.includes('openrouter.ai') ? defaultBaseUrl : (rawBaseUrl || defaultBaseUrl);
+          const rawModel = String(parsed.model || '');
+          const model = AVAILABLE_MODELS.text.includes(rawModel as any) ? rawModel : DEFAULT_MODELS.text;
+          return {
+            provider,
+            apiKey: parsed.apiKey || '',
+            baseUrl,
+            model
+          };
+        }
       } catch { }
       return {
+        provider: 'deepseek',
         apiKey: '',
+        baseUrl: 'https://api.deepseek.com',
         model: DEFAULT_MODELS.text
       };
     })(),

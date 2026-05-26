@@ -1,14 +1,88 @@
-import { FunctionDeclaration, GoogleGenAI, Tool, Type } from '@google/genai';
 import { LLMMessage, LLMProvider, LLMResponse, LLMToolCall, LLMToolDefinition } from '../types';
 import { DEFAULT_MODELS } from '../constants';
-import { calculateTokensForCost } from '../pricing';
 
+type DeepSeekChatMessage =
+  | { role: 'system'; content: string }
+  | { role: 'user'; content: string }
+  | { role: 'assistant'; content?: string | null };
 
-export class GeminiProvider implements LLMProvider {
-  private client: GoogleGenAI;
+interface DeepSeekChatCompletionResponse {
+  id?: string;
+  choices?: Array<{
+    index: number;
+    finish_reason?: string;
+    message?: {
+      role: 'assistant';
+      content?: string | null;
+      tool_calls?: Array<{
+        id: string;
+        type: 'function';
+        function: {
+          name: string;
+          arguments: string;
+        };
+      }>;
+    };
+  }>;
+  usage?: {
+    prompt_tokens?: number;
+    completion_tokens?: number;
+    total_tokens?: number;
+  };
+  error?: {
+    message?: string;
+    type?: string;
+    code?: string | number;
+  };
+}
 
-  constructor(private apiKey: string) {
-    this.client = new GoogleGenAI({ apiKey });
+export class DeepSeekProvider implements LLMProvider {
+  private static nextAllowedAtByKey = new Map<string, number>();
+  private static backoffMsByKey = new Map<string, number>();
+
+  constructor(
+    private readonly apiKey: string,
+    private readonly baseUrl: string = 'https://api.deepseek.com'
+  ) { }
+
+  private static async waitForRateLimit(key: string) {
+    const now = Date.now();
+    const next = DeepSeekProvider.nextAllowedAtByKey.get(key) || 0;
+    if (now >= next) return;
+    await new Promise((r) => setTimeout(r, next - now));
+  }
+
+  private static updateRateLimitFromMessage(key: string, message: string) {
+    const m = message.match(/limited to\s+(\d+)\s+requests per minute/i);
+    const rpm = m ? Number(m[1]) : NaN;
+    const minIntervalMs = Number.isFinite(rpm) && rpm > 0 ? Math.ceil(60000 / rpm) + 500 : 8000;
+    DeepSeekProvider.nextAllowedAtByKey.set(key, Date.now() + minIntervalMs);
+    DeepSeekProvider.backoffMsByKey.set(key, minIntervalMs);
+  }
+
+  private static updateRateLimitFromHeaders(key: string, headers: Headers, status: number) {
+    if (status !== 429) return;
+    const retryAfterRaw = headers.get('retry-after');
+    const retryAfterSeconds = retryAfterRaw ? Number(retryAfterRaw) : NaN;
+
+    const resetRaw =
+      headers.get('x-ratelimit-reset') ||
+      headers.get('ratelimit-reset') ||
+      headers.get('x-ratelimit-reset-requests');
+    const resetSeconds = resetRaw ? Number(resetRaw) : NaN;
+
+    let waitMs: number | null = null;
+    if (Number.isFinite(retryAfterSeconds) && retryAfterSeconds > 0) {
+      waitMs = Math.ceil(retryAfterSeconds * 1000);
+    } else if (Number.isFinite(resetSeconds) && resetSeconds > 0) {
+      waitMs = Math.ceil(resetSeconds * 1000);
+    }
+
+    const prev = DeepSeekProvider.backoffMsByKey.get(key) || 8000;
+    const next = waitMs ?? Math.min(prev * 2, 60000);
+
+    DeepSeekProvider.nextAllowedAtByKey.set(key, Date.now() + next);
+    DeepSeekProvider.backoffMsByKey.set(key, next);
   }
 
   async generateCompletion(
@@ -17,430 +91,125 @@ export class GeminiProvider implements LLMProvider {
     systemInstruction?: string,
     modelName: string = DEFAULT_MODELS.text
   ): Promise<LLMResponse> {
-    const contents = this.mapMessagesToGemini(messages);
+    const payloadMessages: DeepSeekChatMessage[] = [];
 
-    const systemTools: Tool[] | undefined = tools ? [{
-      functionDeclarations: tools.map(t => ({
-        name: t.function.name,
-        description: t.function.description,
-        parameters: this.mapToGeminiSchema(t.function.parameters)
-      } as FunctionDeclaration))
-    }] : undefined;
+    if (systemInstruction?.trim()) {
+      payloadMessages.push({ role: 'system', content: systemInstruction.trim() });
+    }
 
-    console.log("sent to Gemini")
-    console.log("contents--------", contents);
-    console.log("systemInstruction--------", systemInstruction);
-    console.log("tools--------", tools);
-    const result = await this.client.models.generateContent({
-      model: modelName,
-      contents,
-      config: {
-        systemInstruction: systemInstruction,
-        tools: systemTools,
+    for (const m of messages) {
+      if (m.role === 'system') continue;
+      if (m.role === 'user') {
+        payloadMessages.push({ role: 'user', content: m.content || '' });
+        continue;
       }
-    });
-    console.log("received from Gemini")
-    console.log("result--------", result);
-    const candidate = result.candidates?.[0];
-    const parts = candidate?.content?.parts || [];
-
-    let contentStr: string | null = null;
-    let toolCalls: LLMToolCall[] = [];
-
-    for (const part of parts) {
-      if (part.text) {
-        contentStr = (contentStr || '') + part.text;
+      if (m.role === 'assistant') {
+        payloadMessages.push({
+          role: 'assistant',
+          content: m.content || '',
+        });
+        continue;
       }
     }
 
-    // Pull tool calls from both candidates and root (some SDK versions vary)
-    if (candidate?.content?.parts) {
-      for (const part of candidate.content.parts) {
-        if (part.functionCall) {
-          toolCalls.push({
-            id: Math.random().toString(36).substring(7),
+    const requestBody: any = {
+      model: modelName,
+      messages: payloadMessages,
+    };
+
+    const normalizedBaseUrl = this.baseUrl.replace(/\/$/, '');
+    if (tools && tools.length > 0) {
+      requestBody.tools = tools;
+      if (!normalizedBaseUrl.includes('openrouter.ai')) {
+        requestBody.tool_choice = 'auto';
+      }
+    }
+    const url = `${normalizedBaseUrl}/chat/completions`;
+    const rateKey = `${normalizedBaseUrl}|${modelName}`;
+    const baseRateKey = normalizedBaseUrl;
+
+    let lastError: unknown;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      await DeepSeekProvider.waitForRateLimit(baseRateKey);
+      await DeepSeekProvider.waitForRateLimit(rateKey);
+
+      const resp = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${this.apiKey}`,
+          ...(normalizedBaseUrl.includes('openrouter.ai')
+            ? {
+              'HTTP-Referer': 'http://localhost',
+              'X-OpenRouter-Title': 'the-delegation',
+            }
+            : {}),
+        },
+        body: JSON.stringify(requestBody),
+      });
+
+      let json: DeepSeekChatCompletionResponse | undefined;
+      try {
+        json = (await resp.json()) as DeepSeekChatCompletionResponse;
+      } catch {
+        json = undefined;
+      }
+
+      if (resp.ok) {
+        const choice = json?.choices?.[0];
+        const message = choice?.message;
+
+        const toolCalls: LLMToolCall[] | undefined = message?.tool_calls?.length
+          ? message.tool_calls.map((tc) => ({
+            id: tc.id,
             type: 'function',
             function: {
-              name: part.functionCall.name,
-              arguments: JSON.stringify(part.functionCall.args)
-            }
-          });
-        }
-      }
-    }
-
-    if (result.functionCalls && toolCalls.length === 0) {
-      for (const call of result.functionCalls) {
-        toolCalls.push({
-          id: Math.random().toString(36).substring(7),
-          type: 'function',
-          function: {
-            name: call.name,
-            arguments: JSON.stringify(call.args)
-          }
-        });
-      }
-    }
-
-    const usage = result.usageMetadata ? {
-      promptTokens: result.usageMetadata.promptTokenCount || 0,
-      completionTokens: (result.usageMetadata.candidatesTokenCount || 0) + (result.usageMetadata.thoughtsTokenCount || 0),
-      totalTokens: result.usageMetadata.totalTokenCount || 0
-    } : undefined;
-
-    return {
-      content: contentStr,
-      tool_calls: toolCalls.length > 0 ? toolCalls : undefined,
-      usage,
-      finishReason: candidate?.finishReason as string,
-      raw: result, // Return the original SDK result for technical logging
-      request: {
-        contents,
-        systemInstruction,
-        tools: systemTools
-      }
-    };
-  }
-
-  async generateImage(
-    prompt: string,
-    modelName: string = DEFAULT_MODELS.image,
-    onProgress?: (msg: string) => void,
-    options: { aspectRatio?: string; imageSize?: string } = {},
-    images?: string[]
-  ): Promise<{ data: string; usage?: any }> {
-    if (onProgress) onProgress("Generating image...");
-
-    const config = {
-      responseModalities: ["IMAGE", "TEXT"],
-      imageConfig: {
-        aspectRatio: options.aspectRatio || '16:9',
-        imageSize: options.imageSize || '1K', // Default 1K, options: '512', '1K', '2K', '4K'
-      }
-    };
-
-    const contents: any[] = [{ text: prompt }];
-
-    if (images && images.length > 0) {
-      for (const img of images) {
-        const base64Match = img.match(/^data:(image\/[a-z]+);base64,(.+)$/);
-        if (base64Match) {
-          contents.push({
-            inlineData: {
-              mimeType: base64Match[1],
-              data: base64Match[2]
-            }
-          });
-        }
-      }
-    }
-
-    const result = await this.client.models.generateContent({
-      model: modelName,
-      contents,
-      config: config as any
-    });
-
-    const candidate = result.candidates?.[0];
-    const parts = candidate?.content?.parts || [];
-    let base64Data: string | undefined;
-
-    for (const part of parts) {
-      if (part.inlineData) {
-        base64Data = part.inlineData.data;
-      }
-    }
-
-    const imageTokens = calculateTokensForCost(modelName, 1);
-
-    return {
-      data: base64Data || '',
-      usage: {
-        promptTokens: result.usageMetadata?.promptTokenCount || 0,
-        completionTokens: (result.usageMetadata?.candidatesTokenCount || 0) + imageTokens,
-        totalTokens: (result.usageMetadata?.totalTokenCount || 0) + imageTokens,
-        count: 1
-      }
-    };
-  }
-
-  async generateAudio(
-    prompt: string,
-    modelName: string = DEFAULT_MODELS.music,
-    onProgress?: (msg: string) => void
-  ): Promise<{ data: string; usage?: any }> {
-    if (onProgress) onProgress("Generating audio...");
-    const result = await this.client.models.generateContent({
-      model: modelName,
-      contents: prompt,
-      config: {
-        responseModalities: ["AUDIO", "TEXT"],
-      }
-    });
-
-    const candidate = result.candidates?.[0];
-    const parts = candidate?.content?.parts || [];
-    let base64Data: string | undefined;
-
-    for (const part of parts) {
-      if (part.inlineData) {
-        base64Data = part.inlineData.data;
-      }
-    }
-
-    const audioTokens = calculateTokensForCost(modelName, 1);
-
-    return {
-      data: base64Data || '',
-      usage: {
-        promptTokens: result.usageMetadata?.promptTokenCount || 0,
-        completionTokens: (result.usageMetadata?.candidatesTokenCount || 0) + audioTokens,
-        totalTokens: (result.usageMetadata?.totalTokenCount || 0) + audioTokens,
-        count: 1
-      }
-    };
-  }
-
-  async generateVideo(
-    prompt: string,
-    modelName: string = DEFAULT_MODELS.video,
-    onProgress?: (msg: string) => void,
-    options: {
-      resolution?: '720p' | '1080p' | '4k';
-      aspectRatio?: '16:9' | '9:16';
-      durationSeconds?: 4 | 6 | 8;
-    } = {},
-    images?: string[]
-  ): Promise<{ videoUrl: string; usage?: any }> {
-    if (modelName.includes('lite')) {
-      return this.createVideoLite(prompt, modelName, onProgress, options, images);
-    } else {
-      return this.createVideo(prompt, modelName, onProgress, options, images);
-    }
-  }
-
-  private async createVideo(
-    prompt: string,
-    modelName: string,
-    onProgress?: (msg: string) => void,
-    options: any = {},
-    images?: string[]
-  ): Promise<{ videoUrl: string; usage?: any }> {
-    const videoConfig: any = {
-      resolution: options.resolution || '720p',
-      aspectRatio: options.aspectRatio || '16:9',
-      durationSeconds: options.durationSeconds || 4,
-      sampleCount: 1,
-    };
-
-    const generateVideoPayload: any = {
-      model: modelName,
-      config: videoConfig
-    };
-
-    if (prompt) {
-      generateVideoPayload.prompt = prompt;
-    }
-
-    if (images && images.length > 0) {
-      const referenceImagesPayload: any[] = [];
-      for (const img of images) {
-        const m = img.match(/^data:(image\/[a-z]+);base64,(.+)$/);
-        if (m) {
-          referenceImagesPayload.push({
-            image: {
-              imageBytes: m[2],
-              mimeType: m[1]
+              name: tc.function.name,
+              arguments: tc.function.arguments,
             },
-            referenceType: 'asset' // Using lowercase string as currently mapped in other parts
-          });
-        }
-      }
-      
-      if (referenceImagesPayload.length > 0) {
-        generateVideoPayload.config.referenceImages = referenceImagesPayload;
-        // MUST be 8 when using reference images
-        videoConfig.durationSeconds = 8;
-      }
-    }
+          }))
+          : undefined;
 
-    // Also must be 8 for 1080p or 4k
-    if (videoConfig.resolution === '1080p' || videoConfig.resolution === '4k') {
-      videoConfig.durationSeconds = 8;
-    }
-
-    let operation = await (this.client.models as any).generateVideos(generateVideoPayload);
-
-    return this.pollVideoOperation(operation, modelName, onProgress);
-  }
-
-  private async createVideoLite(
-    prompt: string,
-    modelName: string,
-    onProgress?: (msg: string) => void,
-    options: any = {},
-    images?: string[]
-  ): Promise<{ videoUrl: string; usage?: any }> {
-    const videoConfig: any = {
-      resolution: options.resolution || '720p',
-      aspectRatio: options.aspectRatio || '16:9',
-      durationSeconds: options.durationSeconds || 4,
-      sampleCount: 1,
-    };
-
-    const request: any = {
-      model: modelName,
-      prompt: prompt,
-      config: videoConfig
-    };
-
-    if (images && images.length > 0) {
-      // Lite models support 1 primary image for animation (Image object)
-      const m = images[0].match(/^data:(image\/[a-z]+);base64,(.+)$/);
-      if (m) {
-        request.image = {
-          imageBytes: m[2],
-          mimeType: m[1]
+        return {
+          content: message?.content ?? null,
+          tool_calls: toolCalls,
+          usage: json?.usage
+            ? {
+              promptTokens: json.usage.prompt_tokens || 0,
+              completionTokens: json.usage.completion_tokens || 0,
+              totalTokens: json.usage.total_tokens || 0,
+            }
+            : undefined,
+          finishReason: choice?.finish_reason,
+          raw: { ...(json || {}), model: modelName },
+          request: {
+            contents: payloadMessages as any[],
+            systemInstruction,
+            tools,
+          },
         };
       }
-    }
 
-    // Use the official SDK Client
-    let operation = await (this.client.models as any).generateVideos(request);
+      DeepSeekProvider.updateRateLimitFromHeaders(baseRateKey, resp.headers, resp.status);
+      DeepSeekProvider.updateRateLimitFromHeaders(rateKey, resp.headers, resp.status);
 
-    return this.pollVideoOperation(operation, modelName, onProgress);
-  }
+      const retryAfter = resp.headers.get('retry-after');
+      const msg = json?.error?.message
+        ? `${json.error.message} (HTTP ${resp.status}${retryAfter ? `, retry-after=${retryAfter}s` : ''})`
+        : `Provider returned error (HTTP ${resp.status}${retryAfter ? `, retry-after=${retryAfter}s` : ''})`;
+      lastError = new Error(msg);
 
-  private async pollVideoOperation(
-    operation: any,
-    modelName: string,
-    onProgress?: (msg: string) => void
-  ): Promise<{ videoUrl: string; usage?: any }> {
-    while (!operation.done) {
-      if (onProgress) onProgress("Generating video (this may take a minute)...");
-      await new Promise((resolve) => setTimeout(resolve, 10000));
-      operation = await (this.client as any).operations.getVideosOperation({
-        operation: operation,
-      });
-    }
-
-    const videoData = operation.response?.generatedVideos?.[0];
-    let videoUri = (videoData?.video as any)?.uri || '';
-
-    if (videoUri && videoUri.includes('generativelanguage.googleapis.com')) {
-      const separator = videoUri.includes('?') ? '&' : '?';
-      videoUri += `${separator}key=${this.apiKey}`;
-    }
-
-    const videoDuration = videoData?.durationSeconds || 4;
-    const videoTokens = calculateTokensForCost(modelName, videoDuration);
-
-    return {
-      videoUrl: videoUri,
-      usage: {
-        promptTokens: 0,
-        completionTokens: videoTokens,
-        totalTokens: videoTokens,
-        duration: videoDuration
+      if (resp.status === 429 || /rate limit/i.test(msg)) {
+        DeepSeekProvider.updateRateLimitFromMessage(rateKey, msg);
+        continue;
       }
-    };
-  }
 
-  private mapMessagesToGemini(messages: LLMMessage[]): any[] {
-    return messages
-      .filter(m => m.role !== 'system')
-      .map(m => {
-        const role = m.role === 'assistant' ? 'model' : 'user';
-        const parts: any[] = [];
-
-        if (m.content) {
-          parts.push({ text: m.content });
-        }
-
-        if (m.tool_calls) {
-          for (const tc of m.tool_calls) {
-            parts.push({
-              functionCall: {
-                name: tc.function.name,
-                args: JSON.parse(tc.function.arguments)
-              }
-            });
-          }
-        }
-
-        if (m.role === 'tool' && m.name) {
-          parts.push({
-            functionResponse: {
-              name: m.name,
-              response: JSON.parse(m.content)
-            }
-          });
-        }
-
-        if (m.images) {
-          for (const img of m.images) {
-            // Strip data URL prefix if present: "data:image/png;base64,..."
-            const base64Match = img.match(/^data:(image\/[a-z]+);base64,(.+)$/);
-            if (base64Match) {
-              parts.push({
-                inlineData: {
-                  mimeType: base64Match[1],
-                  data: base64Match[2]
-                }
-              });
-            } else {
-              // Assume it's already a raw base64 string and default to jpeg
-              parts.push({
-                inlineData: {
-                  mimeType: 'image/jpeg',
-                  data: img
-                }
-              });
-            }
-          }
-        }
-
-        return { role, parts };
-      });
-  }
-
-  private mapToGeminiSchema(schema: any): any {
-    if (!schema) return undefined;
-
-    const typeStr = (schema.type || 'string').toUpperCase();
-    const mappedType = Type[typeStr as keyof typeof Type] || Type.STRING;
-
-    const result: any = {
-      type: mappedType,
-      description: schema.description,
-      nullable: schema.nullable,
-      minItems: schema.minItems,
-      maxItems: schema.maxItems,
-      minimum: schema.minimum,
-      maximum: schema.maximum,
-      minLength: schema.minLength,
-      maxLength: schema.maxLength,
-    };
-
-    if (schema.properties) {
-      result.properties = Object.keys(schema.properties).reduce((acc, key) => {
-        acc[key] = this.mapToGeminiSchema(schema.properties[key]);
-        return acc;
-      }, {} as Record<string, any>);
+      throw new Error(msg);
     }
 
-    if (schema.required) {
-      result.required = schema.required;
-    }
+    throw lastError instanceof Error
+      ? lastError
+      : new Error(`Provider returned error (HTTP unknown).`);
 
-    if (schema.items) {
-      result.items = this.mapToGeminiSchema(schema.items);
-    }
-
-    if (schema.enum) {
-      result.enum = schema.enum;
-    }
-
-    return result;
   }
 }

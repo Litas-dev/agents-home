@@ -182,17 +182,17 @@ export const AgentConfigPanel: React.FC<AgentConfigPanelProps> = ({
 
               {renderField('LLM Model', <Cpu size={12} />, isView ? (
                 <div className="flex items-center gap-2 px-3 py-1.5 bg-zinc-100 border border-zinc-200 rounded-lg text-xs font-mono text-zinc-600 w-fit lowercase">
-                  {editData.model || 'gemini-3-flash-preview'}
+                  {editData.model || availableModels[0] || 'deepseek-chat'}
                 </div>
               ) : (
                 <select
-                  value={editData.model || 'gemini-3-flash-preview'}
+                  value={editData.model || availableModels[0] || 'deepseek-chat'}
                   onChange={(e) => updateDraft({ model: e.target.value })}
                   className="w-full px-3 py-2 bg-zinc-50 border border-zinc-200 rounded-xl text-xs font-mono focus:outline-none focus:ring-2 focus:ring-black/5 cursor-pointer lowercase"
                 >
                   {availableModels.map(m => <option key={m} value={m} className="lowercase">{m}</option>)}
                 </select>
-              ), 'The specific Gemini model this agent will use.')}
+              ), 'The specific model this agent will use.')}
             </div>
 
             {/* Content Group */}

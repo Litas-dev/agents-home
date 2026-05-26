@@ -3,7 +3,7 @@ import { DEFAULT_MODELS } from '../core/llm/constants';
 
 export const USER_ID = 'user';
 export const USER_NAME = 'User';
-export const MAX_AGENTS = 5;
+export const MAX_AGENTS = 10;
 export { USER_COLOR };
 export const DEFAULT_AGENTIC_SET_ID = 'single-agent';
 export interface AgentNode {
@@ -89,172 +89,51 @@ export const AGENTIC_SETS: AgenticSystem[] = [
     }
   },
   {
-    id: 'photo-studio',
-    teamName: 'Nano Banana Lab',
-    teamType: 'Visual',
-    teamDescription: 'Pro image generation using the [Subject] + [Action] + [Context] + [Comp] + [Style] formula.',
-    color: '#FBBF24',
-    outputType: 'image',
-    outputModel: DEFAULT_MODELS.image,
-    outputAutoApprove: false,
+    id: 'gov-cyber-unit',
+    teamName: 'Government Cyber Unit',
+    teamType: 'Cyber Defense',
+    teamDescription: 'A super-intelligent cyber operations team focused on authorized security assessments, incident response, and defensive engineering. Works strictly within legal scope and written permission.',
+    color: '#00B894',
+    outputType: 'text',
+    outputModel: DEFAULT_MODELS.text,
+    outputAutoApprove: true,
     user: { index: 0, model: 'Human', position: { x: 0, y: 0 } },
     leadAgent: {
-      id: 'art-director',
+      id: 'cyber-ops-director',
       index: 1,
-      name: 'Art Director',
-      description: 'Synthesizes descriptions into valid Nano Banana prompts.',
-      color: '#FBBF24',
-      humanInTheLoop: true,
-      model: DEFAULT_MODELS.text,
-      position: { x: 0, y: 130 },
-      subagents: [
-        {
-          id: 'scene-designer',
-          index: 2,
-          name: 'Scene Designer',
-          description: 'Focuses on Subject and Action within the scene.',
-          color: '#F59E0B',
-          humanInTheLoop: true,
-          model: DEFAULT_MODELS.text,
-          position: { x: -150, y: 280 }
-        },
-        {
-          id: 'lighting-stylist',
-          index: 3,
-          name: 'Lighting Stylist',
-          description: 'Focuses on Composition, Lighting, and Style/Materiality.',
-          color: '#E0E672',
-          humanInTheLoop: true,
-          model: DEFAULT_MODELS.text,
-          position: { x: 150, y: 280 }
-        }
-      ]
-    }
-  },
-  {
-    id: 'music-studio',
-    teamName: 'Lyria Factory',
-    teamType: 'Music Production',
-    teamDescription: 'High-fidelity audio production following Lyria guidelines.',
-    color: '#43E47C',
-    outputType: 'music',
-    outputModel: DEFAULT_MODELS.music,
-    outputAutoApprove: false,
-    user: { index: 0, model: 'Human', position: { x: 0, y: 0 } },
-    leadAgent: {
-      id: 'master-producer',
-      index: 1,
-      name: 'Master Producer',
-      description: 'Orchestrates the 4 pillars of sound into a cohesive track.',
-      color: '#43E47C',
+      name: 'Cyber Ops Director',
+      description: 'Coordinates investigations and defensive strategy. Converts goals into safe, legal, step-by-step plans and assigns work to specialists.',
+      color: '#00B894',
       model: DEFAULT_MODELS.text,
       humanInTheLoop: true,
       position: { x: 0, y: 130 },
       subagents: [
         {
-          id: 'genre-expert',
+          id: 'threat-hunter',
           index: 2,
-          name: 'Genre Expert',
-          description: 'Defines style, mood, and global aesthetic (e.g., Synthwave, Lofi).',
-          color: '#74D295',
+          name: 'Threat Hunter',
+          description: 'Detects suspicious behavior, builds attack timelines from logs, and proposes containment actions. Prioritizes evidence handling and clarity.',
+          color: '#00A3A3',
           model: DEFAULT_MODELS.text,
-          humanInTheLoop: true,
-          position: { x: -450, y: 280 }
+          position: { x: -300, y: 280 }
         },
         {
-          id: 'tempo-architect',
+          id: 'vuln-analyst',
           index: 3,
-          name: 'Tempo Architect',
-          description: 'Specifies BPM, rhythmical complexity, and time signatures.',
-          color: '#92D540',
+          name: 'Vulnerability Analyst',
+          description: 'Performs authorized security reviews, threat modeling, and remediation guidance. Produces secure configuration and patch recommendations.',
+          color: '#6C5CE7',
           model: DEFAULT_MODELS.text,
-          humanInTheLoop: true,
-          position: { x: -150, y: 280 }
+          position: { x: 0, y: 280 }
         },
         {
-          id: 'instrumentalist',
+          id: 'incident-responder',
           index: 4,
-          name: 'Instrumentalist',
-          description: 'Selects timbres, arrangement, and orchestration layers.',
-          color: '#40D5AD',
+          name: 'Incident Responder',
+          description: 'Runs containment/eradication/recovery playbooks, writes post-incident reports, and creates checklists for hardening and monitoring.',
+          color: '#D63031',
           model: DEFAULT_MODELS.text,
-          humanInTheLoop: true,
-          position: { x: 150, y: 280 }
-        },
-        {
-          id: 'dynamics-engineer',
-          index: 5,
-          name: 'Dynamics Engineer',
-          description: 'Controls volume, texture, contrast, and emotional progression.',
-          color: '#50BB55',
-          model: DEFAULT_MODELS.text,
-          humanInTheLoop: true,
-          position: { x: 450, y: 280 }
-        }
-      ]
-    }
-  },
-  {
-    id: 'film-studio',
-    teamName: 'Veo Studio',
-    teamType: 'Cinematic',
-    teamDescription: 'Full cinematic production: Visuals + Soundstage (Veo 3.1 style).',
-    color: '#E64347',
-    outputType: 'video',
-    outputModel: DEFAULT_MODELS.video,
-    outputAutoApprove: false,
-    user: { index: 0, model: 'Human', position: { x: 0, y: 0 } },
-    leadAgent: {
-      id: 'film-director',
-      index: 1,
-      name: 'Film Director',
-      description: 'Orchestrates visuals and soundstage with global cinematic vision.',
-      color: '#E64347',
-      model: DEFAULT_MODELS.text,
-      humanInTheLoop: true,
-      position: { x: 0, y: 130 },
-      subagents: [
-        {
-          id: 'visual-lead',
-          index: 2,
-          name: 'Visual Lead',
-          description: 'Manages cinematography and VFX direction.',
-          color: '#F17DC5',
-          model: DEFAULT_MODELS.text,
-          humanInTheLoop: true,
-          position: { x: -200, y: 280 },
-          subagents: [
-            {
-              id: 'cinematographer',
-              index: 4,
-              name: 'Cinematographer',
-              description: 'Defines camera work, shot composition, and subject action.',
-              color: '#E643C5',
-              model: DEFAULT_MODELS.text,
-              position: { x: -200, y: 430 }
-            }
-          ]
-        },
-        {
-          id: 'audio-lead',
-          index: 3,
-          name: 'Audio Lead',
-          description: 'Manages the soundstage: Dialogue, SFX, and Ambience.',
-          color: '#7CE630',
-          model: DEFAULT_MODELS.text,
-          humanInTheLoop: true,
-          position: { x: 200, y: 280 },
-          subagents: [
-            {
-              id: 'sound-designer',
-              index: 5,
-              name: 'Sound Designer',
-              description: 'Specifies SFX (SFX:), Ambient Noise (Ambient noise:), and Dialogue (" ").',
-              color: '#50BB55',
-              model: DEFAULT_MODELS.text,
-              position: { x: 200, y: 430 }
-            }
-          ]
+          position: { x: 300, y: 280 }
         }
       ]
     }

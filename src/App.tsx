@@ -5,6 +5,8 @@
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useCoreStore } from './integration/store/coreStore';
+import { useUiStore } from './integration/store/uiStore';
+import { AVAILABLE_MODELS } from './core/llm/constants';
 import { ActionLogPanel } from './interface/ActionLogPanel';
 import { FinalOutputModal } from './interface/FinalOutputModal';
 import Header from './interface/Header';
@@ -21,7 +23,8 @@ const App: React.FC = () => {
   const canvasRef = useRef<HTMLDivElement>(null);
   const managerRef = useRef<SceneManager | null>(null);
   const [sceneManager, setSceneManager] = useState<SceneManager | null>(null);
-  const { isLogOpen, isKanbanOpen, setIsResizing, viewMode, setViewMode } = useCoreStore();
+  const { isLogOpen, isKanbanOpen, setIsResizing, viewMode, setViewMode, setAvailableModels } = useCoreStore();
+  const llmConfig = useUiStore((s) => s.llmConfig);
 
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [kanbanHeight, setKanbanHeight] = useState(220);
@@ -70,6 +73,10 @@ const App: React.FC = () => {
       }
     };
   }, []);
+
+  useEffect(() => {
+    setAvailableModels([...AVAILABLE_MODELS.text]);
+  }, [llmConfig.provider, llmConfig.apiKey, llmConfig.baseUrl, setAvailableModels]);
 
   return (
     <SceneContext.Provider value={sceneManager}>
@@ -132,4 +139,3 @@ const App: React.FC = () => {
 };
 
 export default App;
-

@@ -1,5 +1,3 @@
-import { DEFAULT_MODELS } from './constants';
-
 export interface ModelPricing {
   inputPer1M?: number;
   outputPer1M?: number;
@@ -8,33 +6,20 @@ export interface ModelPricing {
   perSecond?: number;
 }
 
-export const GEMINI_PRICING: Record<string, ModelPricing> = {
-  // Text Models
-  [DEFAULT_MODELS.text]: { inputPer1M: 0.50, outputPer1M: 3.00 },
-  'gemini-3.1-pro-preview': { inputPer1M: 2.00, outputPer1M: 12.00 },
-  'gemini-3.1-flash-lite-preview': { inputPer1M: 0.25, outputPer1M: 1.50 },
-  
-  // Image Models
-  [DEFAULT_MODELS.image]: { perImage: 0.067 },
-  'gemini-3-pro-image-preview': { perImage: 0.134 },
-  'gemini-2.5-flash-image': { perImage: 0.039 },
-  
-  // Music Models
-  [DEFAULT_MODELS.music]: { perSong: 0.040 },
-  'lyria-3-pro-preview': { perSong: 0.080 },
-  
-  // Video Models
-  [DEFAULT_MODELS.video]: { perSecond: 0.050 },
-  'veo-3.1-fast-generate-preview': { perSecond: 0.150 },
-  'veo-3.1-generate-preview': { perSecond: 0.400 },
+export const DEEPSEEK_PRICING: Record<string, ModelPricing> = {
+  'deepseek-v4-pro': { inputPer1M: 1.74, outputPer1M: 3.48 },
+  'deepseek-v4-flash': { inputPer1M: 0.14, outputPer1M: 0.28 },
+
+  'deepseek-chat': { inputPer1M: 0.14, outputPer1M: 0.28 },
+  'deepseek-reasoner': { inputPer1M: 0.14, outputPer1M: 0.28 },
 };
 
-export const DEFAULT_PRICING: ModelPricing = GEMINI_PRICING[DEFAULT_MODELS.text];
+export const DEFAULT_PRICING: ModelPricing = { inputPer1M: 0, outputPer1M: 0 };
 
 export function calculateCost(promptTokens: number, completionTokens: number, modelName: string, durationOrCount?: number): number {
   const lowerName = modelName.toLowerCase();
-  const pricingKey = Object.keys(GEMINI_PRICING).find(key => lowerName.includes(key));
-  const pricing = pricingKey ? GEMINI_PRICING[pricingKey] : DEFAULT_PRICING;
+  const pricingKey = Object.keys(DEEPSEEK_PRICING).find(key => lowerName.includes(key));
+  const pricing = pricingKey ? DEEPSEEK_PRICING[pricingKey] : DEFAULT_PRICING;
 
   // 1. Per Image
   if (pricing.perImage !== undefined) {
@@ -60,11 +45,11 @@ export function calculateCost(promptTokens: number, completionTokens: number, mo
 
 export function calculateTokensForCost(modelName: string, durationOrCount?: number): number {
   const lowerName = modelName.toLowerCase();
-  const pricingKey = Object.keys(GEMINI_PRICING).find(key => lowerName.includes(key));
-  const pricing = pricingKey ? GEMINI_PRICING[pricingKey] : DEFAULT_PRICING;
+  const pricingKey = Object.keys(DEEPSEEK_PRICING).find(key => lowerName.includes(key));
+  const pricing = pricingKey ? DEEPSEEK_PRICING[pricingKey] : DEFAULT_PRICING;
   
   const cost = calculateCost(0, 0, modelName, durationOrCount);
-  const baseOutputPrice = GEMINI_PRICING[DEFAULT_MODELS.text]?.outputPer1M || 3.0;
-  
+  const baseOutputPrice = (pricing.outputPer1M || DEFAULT_PRICING.outputPer1M || 0);
+  if (baseOutputPrice <= 0) return 0;
   return Math.floor((cost / baseOutputPrice) * 1000000);
 }

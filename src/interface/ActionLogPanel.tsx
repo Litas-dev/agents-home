@@ -4,6 +4,7 @@ import { getAgentSet, getAllAgents } from '../data/agents'
 import { USER_COLOR, USER_COLOR_LIGHT } from '../theme/brand'
 import { DebugLogEntry, useCoreStore } from '../integration/store/coreStore'
 import { useTeamStore, useActiveTeam } from '../integration/store/teamStore'
+import { useUiStore } from '../integration/store/uiStore'
 import { formatTokens } from './ProjectView'
 
 function formatTime(ts: number): string {
@@ -325,10 +326,11 @@ ${JSON.stringify(entry.raw, null, 2)}
 };
 
 export function ActionLogPanel() {
-    const { setLogOpen, actionLog, debugLog, logFilterAgentIndex } = useCoreStore()
+    const { setLogOpen, actionLog, debugLog, logFilterAgentIndex, agentTokenUsage, agentEstimatedCost, totalTokenUsage, totalEstimatedCost } = useCoreStore()
+    const { agentStatuses, llmConfig, byokError } = useUiStore()
     const activeTeam = useActiveTeam();
     const agents = getAllAgents(activeTeam);
-    const [activeTab, setActiveTab] = useState<'activity' | 'technical'>('technical')
+    const [activeTab, setActiveTab] = useState<'activity' | 'technical' | 'health'>('technical')
     const [isFilterMenuOpen, setIsFilterMenuOpen] = useState(false)
     const topRef = useRef<HTMLDivElement>(null)
 
@@ -392,6 +394,10 @@ ${JSON.stringify(entry.raw, null, 2)}
         logFilterAgentIndex !== null
             ? debugLog.filter((e) => e.agentIndex === logFilterAgentIndex).reverse()
             : [...debugLog].reverse()
+
+    const hasRateLimitWarning =
+        /rate limit|http 429|high demand|overloaded/i.test(byokError || '') ||
+        actionLog.slice(-50).some((e) => /rate limit|http 429|high demand|overloaded/i.test(e.action));
 
     return (
         <div className="w-[320px] h-full bg-white border-r border-zinc-100 flex flex-col pointer-events-auto overflow-hidden shrink-0 relative">
@@ -497,6 +503,13 @@ ${JSON.stringify(entry.raw, null, 2)}
                 >
                     Technical
                 </button>
+                <button
+                    onClick={() => setActiveTab('health')}
+                    className={`flex-1 py-2 text-[10px] font-black uppercase tracking-widest transition-all cursor-pointer ${activeTab === 'health' ? 'bg-white border-b-2 border-darkDelegation text-darkDelegation' : 'text-zinc-400 hover:text-zinc-600'
+                        }`}
+                >
+                    Health
+                </button>
             </div>
 
             {/* Entries */}
@@ -535,7 +548,7 @@ ${JSON.stringify(entry.raw, null, 2)}
                             )
                         })
                     )
-                ) : (
+                ) : activeTab === 'technical' ? (
                     debugEntries.length === 0 ? (
                         <p className="text-zinc-300 text-[10px] font-bold uppercase tracking-widest text-center py-16">No technical data...</p>
                     ) : (
@@ -543,6 +556,67 @@ ${JSON.stringify(entry.raw, null, 2)}
                             <DebugEntryView key={entry.id} entry={entry} />
                         ))
                     )
+                ) : (
+                    <div className="space-y-4">
+                        {hasRateLimitWarning && (
+                            <div className="p-3 rounded-2xl border border-amber-100 bg-amber-50">
+                                <p className="text-[10px] font-black uppercase tracking-widest text-amber-700 mb-1">Warning</p>
+                                <p className="text-xs text-amber-800 font-medium leading-relaxed">
+                                    Rate limit / overload detected. Switch some agents to flash or reduce parallel work.
+                                </p>
+                            </div>
+                        )}
+
+                        <div className="p-3 rounded-2xl border border-zinc-100 bg-zinc-50">
+                            <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500 mb-2">Totals</p>
+                            <div className="flex items-center justify-between gap-3">
+                                <div className="text-xs font-mono font-bold text-darkDelegation">
+                                    T: {formatTokens(totalTokenUsage.totalTokens)}
+                                </div>
+                                <div className="text-xs font-mono font-bold text-darkDelegation">
+                                    ${totalEstimatedCost.toFixed(4)}
+                                </div>
+                            </div>
+                            <div className="mt-2 text-[10px] text-zinc-500 font-medium">
+                                Default model: <span className="font-mono text-zinc-700">{llmConfig.model}</span>
+                            </div>
+                        </div>
+
+                        <div className="space-y-2">
+                            {agents.map((a) => {
+                                const status = agentStatuses[a.index] || 'idle';
+                                const usage = agentTokenUsage[a.index];
+                                const cost = agentEstimatedCost[a.index] || 0;
+                                const model = a.model || llmConfig.model;
+                                return (
+                                    <div key={a.index} className="px-4 py-3 rounded-2xl border border-zinc-100 bg-white flex items-center justify-between gap-3">
+                                        <div className="min-w-0 flex-1">
+                                            <div className="flex items-center gap-2 min-w-0">
+                                                <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: a.color || '#e4e4e7' }} />
+                                                <p className="text-[11px] font-black text-darkDelegation uppercase tracking-widest truncate">
+                                                    {a.name}
+                                                </p>
+                                                <span className="text-[8px] font-bold uppercase tracking-widest text-zinc-400 bg-zinc-50 border border-zinc-100 px-1.5 py-0.5 rounded">
+                                                    {status}
+                                                </span>
+                                            </div>
+                                            <div className="mt-1 text-[10px] text-zinc-500 font-medium truncate">
+                                                <span className="font-mono">{model}</span>
+                                            </div>
+                                        </div>
+                                        <div className="shrink-0 text-right">
+                                            <div className="text-[10px] font-mono font-bold text-zinc-500">
+                                                T: {formatTokens(usage?.totalTokens || 0)}
+                                            </div>
+                                            <div className="text-[10px] font-mono font-bold text-zinc-500">
+                                                ${cost.toFixed(4)}
+                                            </div>
+                                        </div>
+                                    </div>
+                                )
+                            })}
+                        </div>
+                    </div>
                 )}
             </div>
         </div>

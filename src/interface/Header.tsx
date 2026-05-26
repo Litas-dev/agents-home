@@ -1,18 +1,20 @@
-import { Info, KeyRound, Maximize2, Settings } from 'lucide-react';
+import { Github, Info, KeyRound, Maximize2, Settings } from 'lucide-react';
 import React, { useState } from 'react';
 import packageJson from '../../package.json';
 import { useCoreStore } from '../integration/store/coreStore';
 import { useUiStore } from '../integration/store/uiStore';
 import BYOKModal from './BYOKModal';
+import GitHubModal from './GitHubModal';
 import InfoModal from './InfoModal';
 
 const version = packageJson.version;
 
 const Header: React.FC = () => {
-  const { llmConfig, isBYOKOpen, setBYOKOpen } = useUiStore();
+  const { llmConfig, isBYOKOpen, setBYOKOpen, isGitHubOpen, setGitHubOpen, githubConfig } = useUiStore();
   const { setViewMode } = useCoreStore();
   const [isInfoOpen, setIsInfoOpen] = useState(false);
   const hasKey = !!llmConfig.apiKey;
+  const hasGitHub = !!githubConfig.token && !!githubConfig.repo;
 
   const handleFullscreen = () => {
     if (!document.fullscreenElement) {
@@ -47,15 +49,15 @@ const Header: React.FC = () => {
 
           <div className="flex items-center gap-3 min-w-0">
             <a
-              href="https://x.com/arturitu"
+              href="https://github.com/Litas-dev"
               target="_blank"
               rel="noopener"
               className="text-[10px] font-medium text-zinc-400 hover:text-darkDelegation transition-colors truncate"
             >
-              @arturitu
+              Litas-dev
             </a>
             <a
-              href="https://github.com/arturitu/the-delegation"
+              href="https://github.com/Litas-dev/agents-home"
               target="_blank"
               rel="noopener"
               className="text-zinc-300 hover:text-darkDelegation transition-colors shrink-0"
@@ -90,6 +92,16 @@ const Header: React.FC = () => {
             <Maximize2 size={16} />
           </button>
           <button
+            onClick={() => setGitHubOpen(true)}
+            className="relative text-zinc-400 hover:text-darkDelegation transition-colors p-1"
+            title="GitHub"
+          >
+            <Github size={16} className={hasGitHub ? 'text-emerald-500 hover:text-emerald-600' : ''} />
+            {hasGitHub && (
+              <span className="absolute top-0.5 right-0.5 w-1.5 h-1.5 rounded-full bg-emerald-400" />
+            )}
+          </button>
+          <button
             onClick={() => setBYOKOpen(true)}
             className="relative text-zinc-400 hover:text-darkDelegation transition-colors p-1"
             title="API Key (BYOK)"
@@ -108,6 +120,10 @@ const Header: React.FC = () => {
 
       {isBYOKOpen && (
         <BYOKModal key="byok-modal" onClose={() => setBYOKOpen(false)} />
+      )}
+
+      {isGitHubOpen && (
+        <GitHubModal onClose={() => setGitHubOpen(false)} />
       )}
     </header>
   );

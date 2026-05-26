@@ -1,6 +1,7 @@
 import { AgentNode, AGENTIC_SETS } from '../../data/agents';
 import { useCoreStore } from '../../integration/store/coreStore';
 import { useTeamStore } from '../../integration/store/teamStore';
+import { useUiStore } from '../../integration/store/uiStore';
 
 export class PromptBuilder {
   /**
@@ -66,11 +67,17 @@ The generation model expects a SINGLE prompt to produce a SINGLE ${activeTeam?.o
       ? `\nREVISION REQUESTED:\n${pendingReviews.map(t => `- [${t.title}] Feedback: ${t.reviewComments}`).join('\n')}`
       : '';
 
+    const github = useUiStore.getState().githubConfig;
+    const githubContext = github?.token && github?.repo
+      ? `\nGITHUB: Connected to ${github.repo} (base: ${github.baseBranch || 'main'}). If the user asks to push/update GitHub, use github_create_pull_request to open a PR.`
+      : '';
+
     return `ID: ${agent.name}. Role: ${agent.description}. Phase: ${phase}.
 ${brief ? `Brief: ${brief}` : ''}${reviewContext}
 Team: User (0), ${team}
 KANBAN:
 ${board}
+${githubContext}
 RULES:
 1. MAX 30 WORDS for chat. Systemic outputs ('complete_task', 'deliver_project', and the task titles/descriptions you create) MUST be under 100 WORDS. NO conversational filler, intros, outros, or self-attribution ("I have done..."). Focus exclusively on core data and synthesis.
 2. Tools only in WORKING (except set_user_brief in IDLE).

@@ -3,8 +3,11 @@ import { setUserBrief } from './tools/setUserBrief';
 import { proposeTask } from './tools/proposeTask';
 import { completeTask } from './tools/completeTask';
 import { deliverProject } from './tools/deliverProject';
+import { githubCreatePullRequest } from './tools/githubCreatePullRequest';
+import { useUiStore } from '../../integration/store/uiStore';
 
 export interface ToolCall {
+  id?: string;
   name: string;
   args: any;
 }
@@ -23,7 +26,7 @@ export class ToolRegistry {
   /**
    * Processes a tool call by dispatching it to the appropriate tool handler.
    */
-  public static process(agent: AgentActionContext, toolCall: ToolCall): boolean {
+  public static async process(agent: AgentActionContext, toolCall: ToolCall): Promise<boolean> {
     const { name, args } = toolCall;
 
     switch (name) {
@@ -35,6 +38,8 @@ export class ToolRegistry {
         return completeTask(agent, args);
       case 'deliver_project':
         return deliverProject(agent, args);
+      case 'github_create_pull_request':
+        return githubCreatePullRequest(agent, args);
       default:
         console.warn(`[ToolRegistry] Unknown tool: ${name}`);
         return false;
@@ -45,6 +50,8 @@ export class ToolRegistry {
     const isLead = agentIndex === 1;
     const isManager = subagentsCount > 0;
     const tools: any[] = [];
+    const githubConfig = useUiStore.getState().githubConfig;
+    const hasGitHub = !!githubConfig?.token && !!githubConfig?.repo;
 
     // 1. Idle Phase: Only Lead can set the brief
     if (phase === 'idle') {
@@ -120,6 +127,39 @@ export class ToolRegistry {
                 } 
               },
               required: ['output']
+            }
+          }
+        });
+      }
+
+      if (hasGitHub && isLead) {
+        tools.push({
+          type: 'function',
+          function: {
+            name: 'github_create_pull_request',
+            description: 'Create a GitHub pull request by committing provided files to a new branch.',
+            parameters: {
+              type: 'object',
+              properties: {
+                title: { type: 'string' },
+                body: { type: 'string' },
+                baseBranch: { type: 'string' },
+                branchName: { type: 'string' },
+                commitMessage: { type: 'string' },
+                files: {
+                  type: 'array',
+                  minItems: 1,
+                  items: {
+                    type: 'object',
+                    properties: {
+                      path: { type: 'string', description: 'Repo-relative path like src/App.tsx' },
+                      content: { type: 'string', description: 'Full file content (UTF-8)' }
+                    },
+                    required: ['path', 'content']
+                  }
+                }
+              },
+              required: ['title', 'files']
             }
           }
         });

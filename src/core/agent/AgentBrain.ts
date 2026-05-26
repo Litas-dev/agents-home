@@ -1,11 +1,12 @@
 import { LLMMessage } from '../llm/types';
-import { GeminiProvider } from '../llm/providers/GeminiProvider';
+import { DeepSeekProvider } from '../llm/providers/GeminiProvider';
 import { useUiStore } from '../../integration/store/uiStore';
 import { useCoreStore } from '../../integration/store/coreStore';
 import { useTeamStore } from '../../integration/store/teamStore';
 import { ToolRegistry } from './ToolRegistry';
 import { PromptBuilder } from './PromptBuilder';
 import { AGENTIC_SETS, AgentNode } from '../../data/agents';
+import { AVAILABLE_MODELS, DEFAULT_MODELS } from '../llm/constants';
 
 export interface BrainHost {
   data: AgentNode;
@@ -38,9 +39,32 @@ export class AgentBrain {
       this.refreshFromStore();
       const core = useCoreStore.getState();
       const llmConfig = useUiStore.getState().llmConfig;
-      if (!llmConfig.apiKey) throw new Error('Gemini API key is required');
-      const provider = new GeminiProvider(llmConfig.apiKey);
-      const model = this.host.data.model || llmConfig.model;
+      if (!llmConfig.apiKey) throw new Error('DeepSeek API key is required');
+      const provider = new DeepSeekProvider(llmConfig.apiKey, llmConfig.baseUrl);
+      const providerName = llmConfig.provider || (llmConfig.baseUrl?.includes('openrouter.ai') ? 'openrouter' : 'deepseek');
+      const fallbackModel = llmConfig.model;
+      let model = providerName === 'openrouter'
+        ? ((this.host.data.model && this.host.data.model !== DEFAULT_MODELS.text) ? this.host.data.model : fallbackModel)
+        : (this.host.data.model || fallbackModel);
+
+      const allowed = providerName === 'openrouter'
+        ? (useCoreStore.getState().availableModels || [])
+        : [...AVAILABLE_MODELS.text];
+      const resolvedFallback = allowed.includes(fallbackModel)
+        ? fallbackModel
+        : (allowed[0] || fallbackModel);
+
+      if (allowed.length > 0 && !allowed.includes(model)) {
+        model = resolvedFallback;
+        useUiStore.getState().setLlmConfig({ model });
+        try {
+          const saved = localStorage.getItem('byok-config');
+          if (saved) {
+            const parsed = JSON.parse(saved);
+            localStorage.setItem('byok-config', JSON.stringify({ ...parsed, model }));
+          }
+        } catch { }
+      }
       const teamId = useTeamStore.getState().selectedAgentSetId;
       const activeTeam = useTeamStore.getState().customSystems.find(s => s.id === teamId)
         || AGENTIC_SETS.find(s => s.id === teamId);
@@ -90,12 +114,53 @@ export class AgentBrain {
         taskId: this.host.getCurrentTaskId() || undefined
       });
 
-      const response = await provider.generateCompletion(
-        messages,
-        toolDefs,
-        systemPrompt,
-        model
-      );
+      const shouldRotateModel = (msg: string) => {
+        const lower = msg.toLowerCase();
+        return lower.includes('rate limit')
+          || lower.includes('high demand')
+          || lower.includes('overloaded')
+          || lower.includes('provider returned error')
+          || lower.includes('http 429')
+          || lower.includes('http 500')
+          || lower.includes('http 502')
+          || lower.includes('http 503')
+          || lower.includes('http 504');
+      };
+
+      const rotateToNextModel = () => {
+        const available = useCoreStore.getState().availableModels || [];
+        if (available.length === 0) return null;
+        const current = useUiStore.getState().llmConfig.model;
+        const idx = Math.max(0, available.indexOf(current));
+        const next = available[(idx + 1) % available.length] || null;
+        if (!next || next === current) return null;
+        useUiStore.getState().setLlmConfig({ model: next });
+        try {
+          const saved = localStorage.getItem('byok-config');
+          if (saved) {
+            const parsed = JSON.parse(saved);
+            localStorage.setItem('byok-config', JSON.stringify({ ...parsed, model: next }));
+          }
+        } catch { }
+        return next;
+      };
+
+      let response: any;
+      try {
+        response = await provider.generateCompletion(messages, toolDefs, systemPrompt, model);
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        if (providerName === 'openrouter' && shouldRotateModel(msg)) {
+          const next = rotateToNextModel();
+          if (next) {
+            response = await provider.generateCompletion(messages, toolDefs, systemPrompt, next);
+          } else {
+            throw e;
+          }
+        } else {
+          throw e;
+        }
+      }
 
       // 4. Log Response
       core.addResponseLog({
@@ -112,7 +177,7 @@ export class AgentBrain {
       const text = response.content || '';
       const toolCalls = response.tool_calls?.map(tc => {
         try {
-          return { name: tc.function.name, args: JSON.parse(tc.function.arguments) };
+          return { id: tc.id, name: tc.function.name, args: JSON.parse(tc.function.arguments) };
         } catch (e) {
           console.error('[AgentBrain] Failed to parse tool arguments', tc.function.arguments);
           return null;
@@ -157,7 +222,7 @@ export class AgentBrain {
 
       // 7. Process Actions (Tools)
       for (const tc of toolCalls) {
-        const handled = ToolRegistry.process(this.host as any, tc);
+        const handled = await ToolRegistry.process(this.host as any, tc);
         if (tc.name === 'deliver_project' && handled) {
           this.handleFinalAssetGeneration(tc.args.output);
         }
@@ -235,8 +300,7 @@ export class AgentBrain {
 
     try {
       const llmConfig = useUiStore.getState().llmConfig;
-      if (!llmConfig.apiKey) throw new Error('Gemini API key is required');
-      const provider = new GeminiProvider(llmConfig.apiKey) as any;
+      if (!llmConfig.apiKey) throw new Error('DeepSeek API key is required');
       const model = options.model || activeTeam.outputModel || llmConfig.model;
 
       core.addLogEntry({
@@ -245,49 +309,21 @@ export class AgentBrain {
         taskId: undefined
       });
 
-      let assetContent: string = '';
-      let usage: any = undefined;
-
-      if (activeTeam.outputType === 'image') {
-        const result = await provider.generateImage(prompt, model, (msg: string) => {
-          console.log(`[System:Image] ${msg}`);
-        }, options, core.referenceImages);
-        assetContent = result.data || '';
-        usage = result.usage;
-      } else if (activeTeam.outputType === 'music') {
-        const result = await provider.generateAudio(prompt, model, (msg: string) => {
-          console.log(`[System:Audio] ${msg}`);
-        });
-        assetContent = result.data || '';
-        usage = result.usage;
-      } else if (activeTeam.outputType === 'video') {
-        const result = await provider.generateVideo(prompt, model, (msg: string) => {
-          console.log(`[System:Video] ${msg}`);
-        }, options, core.referenceImages);
-        assetContent = result.videoUrl || '';
-        usage = result.usage;
-      } else if (activeTeam.outputType === 'text') {
-        // For text, the prompt is the final output
+      if (activeTeam.outputType === 'text') {
         core.setFinalOutput(prompt);
         core.setPhase('done');
         core.setFinalOutputOpen(true);
         core.setIsGeneratingAsset(false);
         return;
       }
-
-      core.addResponseLog({
-        agentIndex: -1,
-        agentName: 'System',
-        content: `Final ${activeTeam.outputType} generated successfully.`,
-        usage: usage,
-        raw: { model, ...usage },
+      core.setIsGeneratingAsset(false);
+      const errMsg = 'This build supports text output only (DeepSeek).';
+      useUiStore.getState().setBYOKOpen(true, errMsg);
+      core.addLogEntry({
+        agentIndex: 0,
+        action: `Error generating final ${activeTeam.outputType}: ${errMsg}`,
         taskId: undefined
       });
-
-      core.setFinalOutput(prompt);
-      core.setFinalAsset(activeTeam.outputType === 'music' ? 'audio' : activeTeam.outputType as any, assetContent);
-      core.setPhase('done');
-      core.setFinalOutputOpen(true);
     } catch (error) {
       console.error('[AgentBrain] Final asset generation failed:', error);
       core.setIsGeneratingAsset(false);

@@ -119,6 +119,7 @@ interface CoreState {
   setReviewingOutput: (val: boolean) => void;
   setPendingOutputPrompt: (prompt: string) => void;
   setPendingOutputParams: (params: any) => void;
+  setAvailableModels: (models: string[]) => void;
 
   // ── Actions — Tasks ───────────────────────────────────────────
   addTask: (task: Omit<Task, 'id' | 'revisions' | 'createdAt' | 'updatedAt'>) => Task;
@@ -227,6 +228,7 @@ export const useCoreStore = create<CoreState>()(
       setReviewingOutput: (val) => set({ isReviewingOutput: val }),
       setPendingOutputPrompt: (prompt) => set({ pendingOutputPrompt: prompt }),
       setPendingOutputParams: (params) => set({ pendingOutputParams: params }),
+      setAvailableModels: (models) => set({ availableModels: models }),
 
       addTask: (task) => {
         const newTask: Task = {
@@ -488,4 +490,3 @@ useTeamStore.subscribe((state, prevState) => {
     useCoreStore.getState().resetProject();
   }
 });
-

@@ -34,6 +34,15 @@ export interface CharacterState {
   byokError: string | null;
   setBYOKOpen: (open: boolean, error?: string | null) => void;
 
+  isGitHubOpen: boolean;
+  setGitHubOpen: (open: boolean) => void;
+  githubConfig: {
+    token: string;
+    repo: string; // owner/repo
+    baseBranch: string;
+  };
+  setGitHubConfig: (config: Partial<{ token: string; repo: string; baseBranch: string }>) => void;
+
   activeAuditTaskId: string | null;
   setActiveAuditTaskId: (taskId: string | null) => void;
 

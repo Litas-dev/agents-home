@@ -1,7 +1,8 @@
 
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
-import { AgenticSystem, DEFAULT_AGENTIC_SET_ID, getAgentSet } from '../../data/agents';
+import { AgenticSystem, AGENTIC_SETS, DEFAULT_AGENTIC_SET_ID, getAgentSet } from '../../data/agents';
+import { DEFAULT_MODELS } from '../../core/llm/constants';
 
 export type AgentSet = AgenticSystem;
 
@@ -25,8 +26,8 @@ export const useTeamStore = create<TeamState>()(
       saveCustomSystem: (system) =>
         set((s) => ({
           customSystems: s.customSystems.some((cs) => cs.id === system.id)
-            ? s.customSystems.map((cs) => (cs.id === system.id ? system : cs))
-            : [...s.customSystems, system],
+            ? s.customSystems.map((cs) => (cs.id === system.id ? sanitizeSystem(system) : cs))
+            : [...s.customSystems, sanitizeSystem(system)],
         })),
 
       deleteCustomSystem: (id) =>
@@ -37,7 +38,7 @@ export const useTeamStore = create<TeamState>()(
 
       updateActiveSystem: (changes) => set((s) => {
         const currentSystem = getAgentSet(s.selectedAgentSetId, s.customSystems);
-        const updatedSystem = { ...currentSystem, ...changes };
+        const updatedSystem = sanitizeSystem({ ...currentSystem, ...changes });
         return {
           customSystems: s.customSystems.some((cs) => cs.id === updatedSystem.id)
             ? s.customSystems.map((cs) => (cs.id === updatedSystem.id ? updatedSystem : cs))
@@ -47,7 +48,7 @@ export const useTeamStore = create<TeamState>()(
 
       updateSystem: (id, changes) => set((s) => {
         const system = getAgentSet(id, s.customSystems);
-        const updatedSystem = { ...system, ...changes };
+        const updatedSystem = sanitizeSystem({ ...system, ...changes });
         return {
           customSystems: s.customSystems.some((cs) => cs.id === id)
             ? s.customSystems.map((cs) => (cs.id === id ? updatedSystem : cs))
@@ -62,9 +63,47 @@ export const useTeamStore = create<TeamState>()(
     {
       name: 'team-storage',
       storage: createJSONStorage(() => localStorage),
+      version: 2,
+      migrate: (persisted, _version) => {
+        const state = (persisted as any) || {};
+        const sanitizedCustomSystems = Array.isArray(state.customSystems)
+          ? state.customSystems.map((s: AgenticSystem) => sanitizeSystem(s))
+          : [];
+
+        const allIds = new Set<string>([
+          ...AGENTIC_SETS.map((s) => s.id),
+          ...sanitizedCustomSystems.map((s: AgenticSystem) => s.id),
+        ]);
+
+        const selectedAgentSetId = allIds.has(state.selectedAgentSetId)
+          ? state.selectedAgentSetId
+          : DEFAULT_AGENTIC_SET_ID;
+
+        return {
+          ...state,
+          selectedAgentSetId,
+          customSystems: sanitizedCustomSystems,
+        } as TeamState;
+      },
     }
   )
 );
+
+function sanitizeSystem(system: AgenticSystem): AgenticSystem {
+  if (!system) return system;
+  if (system.outputType !== 'text') {
+    return {
+      ...system,
+      outputType: 'text',
+      outputModel: DEFAULT_MODELS.text,
+      outputAutoApprove: true,
+    };
+  }
+  if (!system.outputModel) {
+    return { ...system, outputModel: DEFAULT_MODELS.text };
+  }
+  return system;
+}
 
 /** Returns the currently active AgentSet. Safe to call from service/non-React contexts. */
 export function getActiveAgentSet(): AgentSet {

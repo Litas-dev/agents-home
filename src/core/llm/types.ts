@@ -4,6 +4,7 @@ export interface LLMMessage {
   role: LLMRole;
   content: string;
   name?: string; // Required for tool responses in some APIs
+  tool_call_id?: string; // Required for tool responses in OpenAI-compatible APIs
   tool_calls?: LLMToolCall[];
   images?: string[]; // Optional base64 images
   metadata?: {
@@ -31,6 +32,7 @@ export interface LLMToolDefinition {
 }
 
 export interface LLMConfig {
+  provider?: 'deepseek' | 'openrouter';
   apiKey?: string;
   baseUrl?: string;
   model: string;

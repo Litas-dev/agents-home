@@ -274,9 +274,6 @@ export const TeamCard: React.FC<TeamCardProps> = ({
                     className="w-full bg-white border border-zinc-100 text-[11px] font-bold rounded-xl px-2.5 py-1.5 outline-none cursor-pointer"
                   >
                     <option value="text">TEXT</option>
-                    <option value="image">IMAGE</option>
-                    <option value="music">MUSIC</option>
-                    <option value="video">VIDEO</option>
                   </select>
                 </div>
                 <div className="space-y-1">

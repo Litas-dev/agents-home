@@ -13,12 +13,15 @@ const BYOKModal: React.FC<BYOKModalProps> = ({ onClose }) => {
   const { llmConfig, setLlmConfig, byokError } = useUiStore();
 
   const [apiKey, setApiKey] = useState<string>(llmConfig.apiKey || '');
+  const [baseUrl, setBaseUrl] = useState<string>(llmConfig.baseUrl || 'https://api.deepseek.com');
   const [showKey, setShowKey] = useState(false);
   const [isErrorExpanded, setIsErrorExpanded] = useState(false);
 
   const handleSave = () => {
     const config = {
+      provider: 'deepseek' as const,
       apiKey: apiKey.trim(),
+      baseUrl: baseUrl.trim() || 'https://api.deepseek.com',
       model: llmConfig.model || DEFAULT_MODELS.text,
     };
     setLlmConfig(config);
@@ -33,9 +36,12 @@ const BYOKModal: React.FC<BYOKModalProps> = ({ onClose }) => {
   const handleClear = () => {
     const emptyConfig = {
       apiKey: '',
+      provider: 'deepseek' as const,
+      baseUrl: 'https://api.deepseek.com',
       model: llmConfig.model || DEFAULT_MODELS.text,
     };
     setApiKey('');
+    setBaseUrl('https://api.deepseek.com');
     setLlmConfig(emptyConfig);
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(emptyConfig));
@@ -67,15 +73,17 @@ const BYOKModal: React.FC<BYOKModalProps> = ({ onClose }) => {
           {/* Header */}
           <div className="mb-6">
             <h2 className="text-3xl font-black text-darkDelegation tracking-tight mb-2">
-              Gemini API Key
+              API Key
             </h2>
             <a
-              href="https://aistudio.google.com/app/apikey"
+              href="https://platform.deepseek.com/settings/api-keys"
               target="_blank"
               rel="noopener"
               className="group inline-flex items-center gap-2 px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 border border-emerald-100 hover:border-emerald-200 rounded-full transition-all duration-200 mb-3"
             >
-              <span className="text-[10px] font-black uppercase tracking-wider text-emerald-600">Get Gemini API Key</span>
+              <span className="text-[10px] font-black uppercase tracking-wider text-emerald-600">
+                Get DeepSeek API Key
+              </span>
               <svg className="text-emerald-500 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
                 <line x1="7" y1="17" x2="17" y2="7"></line>
                 <polyline points="7 7 17 7 17 17"></polyline>
@@ -116,7 +124,6 @@ const BYOKModal: React.FC<BYOKModalProps> = ({ onClose }) => {
             );
           })()}
 
-
           {/* API Key input */}
           <div className="mb-10">
             <label className="block text-[11px] font-black uppercase tracking-[0.2em] text-zinc-300 mb-4 ml-1">
@@ -138,6 +145,19 @@ const BYOKModal: React.FC<BYOKModalProps> = ({ onClose }) => {
                 {showKey ? <EyeOff size={20} strokeWidth={2.5} /> : <Eye size={20} strokeWidth={2.5} />}
               </button>
             </div>
+          </div>
+
+          <div className="mb-10">
+            <label className="block text-[11px] font-black uppercase tracking-[0.2em] text-zinc-300 mb-4 ml-1">
+              Base URL
+            </label>
+            <input
+              type="text"
+              value={baseUrl}
+              onChange={(e) => setBaseUrl(e.target.value)}
+              placeholder="https://api.deepseek.com"
+              className="w-full bg-zinc-50 border border-zinc-100 rounded-3xl px-6 py-4 text-sm text-darkDelegation font-mono placeholder:text-zinc-300 placeholder:font-sans focus:outline-none focus:border-zinc-200 transition-all shadow-sm"
+            />
           </div>
 
           {/* Actions */}

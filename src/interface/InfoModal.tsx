@@ -48,7 +48,7 @@ const InfoModal: React.FC<InfoModalProps> = ({ onClose }) => {
 
           <div className="mt-6 flex flex-col items-center gap-6">
             <a
-              href="https://github.com/arturitu/the-delegation"
+              href="https://github.com/Litas-dev/agents-home"
               target="_blank"
               rel="noopener noreferrer"
               className="flex items-center justify-center gap-2.5 px-8 py-3.5 bg-zinc-100 text-zinc-600 rounded-xl text-[11px] font-black uppercase tracking-[0.2em] hover:bg-zinc-200 transition-all active:scale-95 cursor-pointer shadow-sm"
@@ -61,7 +61,7 @@ const InfoModal: React.FC<InfoModalProps> = ({ onClose }) => {
 
             <div className="pt-4 border-t border-zinc-50 w-full flex flex-col items-center">
               <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-[0.15em] text-center leading-loose">
-                Developed with ❤️ by <a href="https://unboring.net" target="_blank" rel="noopener noreferrer" className="text-zinc-600 hover:text-darkDelegation transition-colors underline decoration-zinc-100 underline-offset-4">Arturo Paracuellos (unboring.net)</a>
+                Forked from <a href="https://github.com/arturitu/the-delegation" target="_blank" rel="noopener noreferrer" className="text-zinc-600 hover:text-darkDelegation transition-colors underline decoration-zinc-100 underline-offset-4">The Delegation</a>
               </p>
             </div>
           </div>
@@ -72,5 +72,4 @@ const InfoModal: React.FC<InfoModalProps> = ({ onClose }) => {
 };
 
 export default InfoModal;
-
 
