@@ -1,0 +1,7 @@
+# config/features.yaml
+features:
+  team_health_panel:
+    enabled: true          # Kill-switch for rollout/revert
+    rate_limit_window: 300 # seconds (5 min) for 429 detection
+    poll_interval: 15      # seconds between agent status refresh
+    max_agents: 50         # hard cap to avoid render thrash
