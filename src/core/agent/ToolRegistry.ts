@@ -3,7 +3,7 @@ import { setUserBrief } from './tools/setUserBrief';
 import { proposeTask } from './tools/proposeTask';
 import { completeTask } from './tools/completeTask';
 import { deliverProject } from './tools/deliverProject';
-import { githubCreatePullRequest } from './tools/githubCreatePullRequest';
+import { githubCreatePullRequest, githubListRepoTree, githubReadFile, githubSearchCode } from './tools/githubCreatePullRequest';
 import { useUiStore } from '../../integration/store/uiStore';
 
 export interface ToolCall {
@@ -40,6 +40,12 @@ export class ToolRegistry {
         return deliverProject(agent, args);
       case 'github_create_pull_request':
         return githubCreatePullRequest(agent, args);
+      case 'github_list_repo_tree':
+        return githubListRepoTree(agent, args);
+      case 'github_read_file':
+        return githubReadFile(agent, args);
+      case 'github_search_code':
+        return githubSearchCode(agent, args);
       default:
         console.warn(`[ToolRegistry] Unknown tool: ${name}`);
         return false;
@@ -52,6 +58,7 @@ export class ToolRegistry {
     const tools: any[] = [];
     const githubConfig = useUiStore.getState().githubConfig;
     const hasGitHub = !!githubConfig?.token && !!githubConfig?.repo;
+    const isUser = agentIndex === 0;
 
     // 1. Idle Phase: Only Lead can set the brief
     if (phase === 'idle') {
@@ -68,6 +75,62 @@ export class ToolRegistry {
             }
           }
         });
+      }
+      if (hasGitHub && isLead) {
+        tools.push(
+          {
+            type: 'function',
+            function: {
+              name: 'github_list_repo_tree',
+              description: 'List repository files and folders from GitHub. Use to discover paths before reading files.',
+              parameters: {
+                type: 'object',
+                properties: {
+                  ref: { type: 'string', description: 'Branch or ref (default: base branch)' },
+                  path: { type: 'string', description: 'Optional subfolder like src or src/core' },
+                  recursive: { type: 'boolean', description: 'List recursively (default: true)' },
+                  maxEntries: { type: 'integer', description: 'Max entries to return (default: 500)' },
+                  shareWithUser: { type: 'boolean', description: 'If true, show results in chat. Otherwise keep internal.' }
+                }
+              }
+            }
+          },
+          {
+            type: 'function',
+            function: {
+              name: 'github_read_file',
+              description: 'Read a file from GitHub repo and return its contents.',
+              parameters: {
+                type: 'object',
+                properties: {
+                  path: { type: 'string', description: 'Repo-relative path like src/App.tsx' },
+                  ref: { type: 'string', description: 'Branch or ref (default: base branch)' },
+                  maxChars: { type: 'integer', description: 'Max characters returned (default: 20000)' },
+                  shareWithUser: { type: 'boolean', description: 'If true, display file contents in chat. Otherwise keep internal.' }
+                },
+                required: ['path']
+              }
+            }
+          },
+          {
+            type: 'function',
+            function: {
+              name: 'github_search_code',
+              description: 'Search code in the connected GitHub repo.',
+              parameters: {
+                type: 'object',
+                properties: {
+                  query: { type: 'string', description: 'Search query (supports GitHub qualifiers)' },
+                  path: { type: 'string', description: 'Optional path filter like src' },
+                  perPage: { type: 'integer', description: 'Results per page (default: 10)' },
+                  page: { type: 'integer', description: 'Page number (default: 1)' },
+                  shareWithUser: { type: 'boolean', description: 'If true, show results in chat. Otherwise keep internal.' }
+                },
+                required: ['query']
+              }
+            }
+          }
+        );
       }
       return tools;
     }
@@ -130,6 +193,63 @@ export class ToolRegistry {
             }
           }
         });
+      }
+
+      if (hasGitHub && !isUser) {
+        tools.push(
+          {
+            type: 'function',
+            function: {
+              name: 'github_list_repo_tree',
+              description: 'List repository files and folders from GitHub. Use to discover paths before reading files.',
+              parameters: {
+                type: 'object',
+                properties: {
+                  ref: { type: 'string', description: 'Branch or ref (default: base branch)' },
+                  path: { type: 'string', description: 'Optional subfolder like src or src/core' },
+                  recursive: { type: 'boolean', description: 'List recursively (default: true)' },
+                  maxEntries: { type: 'integer', description: 'Max entries to return (default: 500)' },
+                  shareWithUser: { type: 'boolean', description: 'If true, show results in chat. Otherwise keep internal.' }
+                }
+              }
+            }
+          },
+          {
+            type: 'function',
+            function: {
+              name: 'github_read_file',
+              description: 'Read a file from GitHub repo and return its contents.',
+              parameters: {
+                type: 'object',
+                properties: {
+                  path: { type: 'string', description: 'Repo-relative path like src/App.tsx' },
+                  ref: { type: 'string', description: 'Branch or ref (default: base branch)' },
+                  maxChars: { type: 'integer', description: 'Max characters returned (default: 20000)' },
+                  shareWithUser: { type: 'boolean', description: 'If true, display file contents in chat. Otherwise keep internal.' }
+                },
+                required: ['path']
+              }
+            }
+          },
+          {
+            type: 'function',
+            function: {
+              name: 'github_search_code',
+              description: 'Search code in the connected GitHub repo.',
+              parameters: {
+                type: 'object',
+                properties: {
+                  query: { type: 'string', description: 'Search query (supports GitHub qualifiers)' },
+                  path: { type: 'string', description: 'Optional path filter like src' },
+                  perPage: { type: 'integer', description: 'Results per page (default: 10)' },
+                  page: { type: 'integer', description: 'Page number (default: 1)' },
+                  shareWithUser: { type: 'boolean', description: 'If true, show results in chat. Otherwise keep internal.' }
+                },
+                required: ['query']
+              }
+            }
+          }
+        );
       }
 
       if (hasGitHub && isLead) {

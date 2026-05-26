@@ -13,14 +13,14 @@ interface TeamsPanelProps {
 }
 
 export const TeamsPanel: React.FC<TeamsPanelProps> = ({ onSelectTeam, selectedTeamId, onModeChange, mode }) => {
-  const { customSystems, selectedAgentSetId, saveCustomSystem } = useTeamStore();
+  const { customSystems, selectedAgentSetId, saveCustomSystem, hiddenSystemIds, unhideAllSystems } = useTeamStore();
 
   const allSystems = useMemo(() => {
     const combined = [...customSystems, ...AGENTIC_SETS];
     return combined.filter((sys, index, self) =>
       index === self.findIndex((s) => s.id === sys.id)
-    );
-  }, [customSystems]);
+    ).filter((sys) => !hiddenSystemIds.includes(sys.id));
+  }, [customSystems, hiddenSystemIds]);
 
   const handleCreateNew = () => {
     const newId = `team-${Date.now()}`;
@@ -76,6 +76,14 @@ export const TeamsPanel: React.FC<TeamsPanelProps> = ({ onSelectTeam, selectedTe
         })}
       </div>
       <div className="p-4 border-t border-zinc-50 bg-white">
+        {hiddenSystemIds.length > 0 && (
+          <button
+            onClick={unhideAllSystems}
+            className="w-full flex items-center justify-center gap-2 py-2 mb-2 bg-zinc-50 hover:bg-zinc-100 text-zinc-500 rounded-xl text-[10px] font-black uppercase tracking-[0.1em] transition-all border border-zinc-100 active:scale-[0.98]"
+          >
+            Show Hidden Teams
+          </button>
+        )}
         <button
           onClick={handleCreateNew}
           className="w-full flex items-center justify-center gap-2 py-3 bg-darkDelegation hover:bg-darkDelegation text-white rounded-xl text-[10px] font-black uppercase tracking-[0.1em] transition-all shadow-lg shadow-black/5 active:scale-[0.98]"

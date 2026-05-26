@@ -26,7 +26,7 @@ const InfoModal: React.FC<InfoModalProps> = ({ onClose }) => {
         <div className="max-w-md mx-auto">
           <div className="flex justify-center mb-8">
             <img
-              src="images/the-delegation.svg"
+              src={`${import.meta.env.BASE_URL}images/the-delegation.svg`}
               alt="The Delegation Logo"
               width={256}
               className="h-auto"
@@ -72,4 +72,3 @@ const InfoModal: React.FC<InfoModalProps> = ({ onClose }) => {
 };
 
 export default InfoModal;
-

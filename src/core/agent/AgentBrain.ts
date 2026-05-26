@@ -105,11 +105,20 @@ export class AgentBrain {
       const toolDefs = options.tools || ToolRegistry.getDefinitions(this.host.data.index, core.phase, this.host.data.subagents?.length || 0);
 
       // 3. Log and Execute LLM Call
+      const messagesForLog = messages.map((m) => {
+        if (m.metadata?.internal) {
+          return {
+            ...m,
+            content: m.content ? `[internal omitted: ${m.content.length} chars]` : '[internal omitted]',
+          };
+        }
+        return m;
+      });
       core.addRequestLog({
         agentIndex: this.host.data.index,
         agentName: this.host.data.name,
         systemInstruction: systemPrompt,
-        contents: messages,
+        contents: messagesForLog,
         systemTools: toolDefs,
         taskId: this.host.getCurrentTaskId() || undefined
       });

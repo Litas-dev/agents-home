@@ -1,5 +1,5 @@
 import { Check, Eye, EyeOff, Github, X } from 'lucide-react';
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useUiStore } from '../integration/store/uiStore';
 
 const STORAGE_KEY = 'github-config';
@@ -13,9 +13,97 @@ export default function GitHubModal({ onClose }: { onClose: () => void }) {
   const [showToken, setShowToken] = useState(false);
   const [status, setStatus] = useState<{ ok: boolean; msg: string } | null>(null);
   const [isValidating, setIsValidating] = useState(false);
+  const [oauthEnabled, setOauthEnabled] = useState(false);
+  const [isOauthStarting, setIsOauthStarting] = useState(false);
+  const [repos, setRepos] = useState<string[]>([]);
+  const [isLoadingRepos, setIsLoadingRepos] = useState(false);
+  const popupRef = useRef<Window | null>(null);
 
   const normalizedRepo = useMemo(() => repo.trim().replace(/^https?:\/\/github\.com\//, '').replace(/\.git$/, ''), [repo]);
   const isValidRepo = normalizedRepo.split('/').filter(Boolean).length === 2;
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const resp = await fetch('/api/github/oauth/config');
+        const json = await resp.json().catch(() => null);
+        if (!cancelled) setOauthEnabled(Boolean(json?.enabled));
+      } catch {
+        if (!cancelled) setOauthEnabled(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    const handler = (e: MessageEvent) => {
+      if (!e?.data || typeof e.data !== 'object') return;
+      if (e.origin !== window.location.origin) return;
+      if (e.data.type !== 'github_oauth_token') return;
+      const t = String(e.data.token || '').trim();
+      if (!t) return;
+      setToken(t);
+      setStatus({ ok: true, msg: 'GitHub login successful. Load repos or paste owner/repo, then Save.' });
+      try { popupRef.current?.close(); } catch { }
+      popupRef.current = null;
+      setIsOauthStarting(false);
+    };
+    window.addEventListener('message', handler);
+    return () => window.removeEventListener('message', handler);
+  }, []);
+
+  const handleLogin = () => {
+    setStatus(null);
+    setIsOauthStarting(true);
+    try {
+      const w = window.open('/api/github/oauth/start', 'github_oauth', 'width=520,height=720');
+      popupRef.current = w;
+      if (!w) {
+        setIsOauthStarting(false);
+        setStatus({ ok: false, msg: 'Popup blocked. Allow popups and try again.' });
+      }
+    } catch (e) {
+      setIsOauthStarting(false);
+      setStatus({ ok: false, msg: e instanceof Error ? e.message : String(e) });
+    }
+  };
+
+  const loadRepos = async () => {
+    setStatus(null);
+    if (!token.trim()) {
+      setStatus({ ok: false, msg: 'Missing token' });
+      return;
+    }
+    setIsLoadingRepos(true);
+    try {
+      const resp = await fetch('https://api.github.com/user/repos?per_page=100&sort=updated', {
+        headers: {
+          Authorization: `Bearer ${token.trim()}`,
+          Accept: 'application/vnd.github+json',
+        },
+      });
+      const json = await resp.json().catch(() => null);
+      if (!resp.ok) {
+        const msg = (json?.message ? String(json.message) : `HTTP ${resp.status}`).trim();
+        setStatus({ ok: false, msg });
+        setRepos([]);
+        return;
+      }
+      const items = Array.isArray(json) ? json : [];
+      const names = items
+        .map((r: any) => String(r?.full_name || ''))
+        .filter((s: string) => s.includes('/'));
+      const unique = Array.from(new Set(names));
+      setRepos(unique);
+      if (!repo.trim() && unique.length > 0) setRepo(unique[0]);
+      setStatus({ ok: true, msg: `Loaded ${unique.length} repos.` });
+    } catch (e) {
+      setStatus({ ok: false, msg: e instanceof Error ? e.message : String(e) });
+    } finally {
+      setIsLoadingRepos(false);
+    }
+  };
 
   const handleSave = () => {
     const next = {
@@ -86,6 +174,24 @@ export default function GitHubModal({ onClose }: { onClose: () => void }) {
             </p>
           </div>
 
+          {oauthEnabled && (
+            <div className="mb-6 p-4 rounded-3xl border border-zinc-100 bg-zinc-50">
+              <p className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-400 mb-2">
+                Login
+              </p>
+              <button
+                onClick={handleLogin}
+                disabled={isOauthStarting}
+                className="w-full px-5 py-3 bg-white hover:bg-zinc-100 border border-zinc-200 rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] transition-all active:scale-95 cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
+              >
+                {isOauthStarting ? 'Opening…' : 'Login with GitHub'}
+              </button>
+              <p className="mt-2 text-[10px] text-zinc-400 font-medium leading-relaxed">
+                Available in dev mode with a local server.
+              </p>
+            </div>
+          )}
+
           {status && (
             <div className={`mb-6 p-3 rounded-2xl flex items-start gap-2 border ${status.ok ? 'bg-emerald-50 border-emerald-100' : 'bg-red-50 border-red-100'}`}>
               <div className={`mt-0.5 shrink-0 ${status.ok ? 'text-emerald-600' : 'text-red-500'}`}>
@@ -103,16 +209,38 @@ export default function GitHubModal({ onClose }: { onClose: () => void }) {
           )}
 
           <div className="mb-8">
-            <label className="block text-[11px] font-black uppercase tracking-[0.2em] text-zinc-300 mb-4 ml-1">
-              Repo (owner/repo)
-            </label>
-            <input
-              type="text"
-              value={repo}
-              onChange={(e) => setRepo(e.target.value)}
-              placeholder="owner/repo"
-              className="w-full bg-zinc-50 border border-zinc-100 rounded-3xl px-6 py-4 text-sm text-darkDelegation font-mono placeholder:text-zinc-300 placeholder:font-sans focus:outline-none focus:border-zinc-200 transition-all shadow-sm"
-            />
+            <div className="flex items-center justify-between mb-4 px-1">
+              <label className="block text-[11px] font-black uppercase tracking-[0.2em] text-zinc-300">
+                Repo (owner/repo)
+              </label>
+              <button
+                onClick={loadRepos}
+                disabled={isLoadingRepos || !token.trim()}
+                className="text-[9px] font-black uppercase tracking-widest text-zinc-400 hover:text-darkDelegation transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+              >
+                {isLoadingRepos ? 'Loading…' : 'Load My Repos'}
+              </button>
+            </div>
+
+            {repos.length > 0 ? (
+              <select
+                value={repo}
+                onChange={(e) => setRepo(e.target.value)}
+                className="w-full bg-zinc-50 border border-zinc-100 rounded-3xl px-6 py-4 text-sm text-darkDelegation font-mono focus:outline-none focus:border-zinc-200 transition-all shadow-sm cursor-pointer"
+              >
+                {repos.map((r) => (
+                  <option key={r} value={r}>{r}</option>
+                ))}
+              </select>
+            ) : (
+              <input
+                type="text"
+                value={repo}
+                onChange={(e) => setRepo(e.target.value)}
+                placeholder="owner/repo"
+                className="w-full bg-zinc-50 border border-zinc-100 rounded-3xl px-6 py-4 text-sm text-darkDelegation font-mono placeholder:text-zinc-300 placeholder:font-sans focus:outline-none focus:border-zinc-200 transition-all shadow-sm"
+              />
+            )}
           </div>
 
           <div className="mb-8">
@@ -171,4 +299,3 @@ export default function GitHubModal({ onClose }: { onClose: () => void }) {
     </div>
   );
 }
-

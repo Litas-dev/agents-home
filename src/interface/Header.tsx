@@ -31,7 +31,7 @@ const Header: React.FC = () => {
       {/* Left: Project Title */}
       <div className="flex items-center min-w-0">
         <img
-          src="images/the-delegation.svg"
+          src={`${import.meta.env.BASE_URL}images/the-delegation.svg`}
           alt="The Delegation"
           className="h-10 w-auto shrink-0"
         />

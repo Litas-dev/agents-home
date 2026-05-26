@@ -6,7 +6,7 @@ import {defineConfig, loadEnv} from 'vite';
 export default defineConfig(({mode}) => {
   const env = loadEnv(mode, '.', '');
   return {
-    base: '/agents-home/',
+    base: mode === 'production' ? '/agents-home/' : '/',
     plugins: [react(), tailwindcss()],
     resolve: {
       alias: {

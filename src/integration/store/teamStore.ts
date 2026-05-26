@@ -9,12 +9,15 @@ export type AgentSet = AgenticSystem;
 interface TeamState {
   selectedAgentSetId: string;
   customSystems: AgenticSystem[];
+  hiddenSystemIds: string[];
 
   saveCustomSystem: (system: AgenticSystem) => void;
   deleteCustomSystem: (id: string) => void;
   updateActiveSystem: (changes: Partial<AgenticSystem>) => void;
   updateSystem: (id: string, changes: Partial<AgenticSystem>) => void;
   setActiveTeam: (id: string) => void;
+  hideSystem: (id: string) => void;
+  unhideAllSystems: () => void;
 }
 
 export const useTeamStore = create<TeamState>()(
@@ -22,6 +25,7 @@ export const useTeamStore = create<TeamState>()(
     (set) => ({
       selectedAgentSetId: DEFAULT_AGENTIC_SET_ID,
       customSystems: [],
+      hiddenSystemIds: [],
 
       saveCustomSystem: (system) =>
         set((s) => ({
@@ -35,6 +39,15 @@ export const useTeamStore = create<TeamState>()(
           customSystems: s.customSystems.filter((cs) => cs.id !== id),
           selectedAgentSetId: s.selectedAgentSetId === id ? DEFAULT_AGENTIC_SET_ID : s.selectedAgentSetId,
         })),
+
+      hideSystem: (id) =>
+        set((s) => ({
+          hiddenSystemIds: s.hiddenSystemIds.includes(id) ? s.hiddenSystemIds : [...s.hiddenSystemIds, id],
+          customSystems: s.customSystems.filter((cs) => cs.id !== id),
+          selectedAgentSetId: s.selectedAgentSetId === id ? DEFAULT_AGENTIC_SET_ID : s.selectedAgentSetId,
+        })),
+
+      unhideAllSystems: () => set({ hiddenSystemIds: [] }),
 
       updateActiveSystem: (changes) => set((s) => {
         const currentSystem = getAgentSet(s.selectedAgentSetId, s.customSystems);
@@ -63,7 +76,7 @@ export const useTeamStore = create<TeamState>()(
     {
       name: 'team-storage',
       storage: createJSONStorage(() => localStorage),
-      version: 2,
+      version: 3,
       migrate: (persisted, _version) => {
         const state = (persisted as any) || {};
         const sanitizedCustomSystems = Array.isArray(state.customSystems)
@@ -83,6 +96,7 @@ export const useTeamStore = create<TeamState>()(
           ...state,
           selectedAgentSetId,
           customSystems: sanitizedCustomSystems,
+          hiddenSystemIds: Array.isArray(state.hiddenSystemIds) ? state.hiddenSystemIds : [],
         } as TeamState;
       },
     }

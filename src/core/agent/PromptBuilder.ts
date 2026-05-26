@@ -69,7 +69,7 @@ The generation model expects a SINGLE prompt to produce a SINGLE ${activeTeam?.o
 
     const github = useUiStore.getState().githubConfig;
     const githubContext = github?.token && github?.repo
-      ? `\nGITHUB: Connected to ${github.repo} (base: ${github.baseBranch || 'main'}). If the user asks to push/update GitHub, use github_create_pull_request to open a PR.`
+      ? `\nGITHUB: Connected to ${github.repo} (base: ${github.baseBranch || 'main'}).\n- Browse repo: github_list_repo_tree\n- Read file: github_read_file\n- Search code: github_search_code\n- Write/push: If the user asks to push/update GitHub, the Lead uses github_create_pull_request to open a PR.`
       : '';
 
     return `ID: ${agent.name}. Role: ${agent.description}. Phase: ${phase}.
@@ -80,10 +80,11 @@ ${board}
 ${githubContext}
 RULES:
 1. MAX 30 WORDS for chat. Systemic outputs ('complete_task', 'deliver_project', and the task titles/descriptions you create) MUST be under 100 WORDS. NO conversational filler, intros, outros, or self-attribution ("I have done..."). Focus exclusively on core data and synthesis.
-2. Tools only in WORKING (except set_user_brief in IDLE).
+2. Tools only in WORKING (except set_user_brief in IDLE, and GitHub browse/read/search tools if GitHub is connected).
 3. QUALITY: If your node has 'Human-in-the-loop' enabled, your 'complete_task' result will be reviewed by the user before completion. 
-4. NO META-TALK: Avoid "I have finished X", "Here is the result". Use the tool payload for content and Chat for conversation only.${outputInstruction}${imageInstruction}
-5. LANGUAGE: You MUST generate all systemic outputs (tasks, 'complete_task' results, and 'deliver_project' prompts) in the same language as the 'Brief' or the user's interaction. If the project description is in Spanish, EVERYTHING you generate must be in Spanish.
+4. GITHUB OUTPUT: Do not paste repo trees or raw file contents into chat unless the user explicitly asks to see them. Use GitHub tools for internal context and only summarize by default.
+5. NO META-TALK: Avoid "I have finished X", "Here is the result". Use the tool payload for content and Chat for conversation only.${outputInstruction}${imageInstruction}
+6. LANGUAGE: You MUST generate all systemic outputs (tasks, 'complete_task' results, and 'deliver_project' prompts) in the same language as the 'Brief' or the user's interaction. If the project description is in Spanish, EVERYTHING you generate must be in Spanish.
 Goal: ${objectives[phase as keyof typeof objectives] || ''}`;
   }
 }

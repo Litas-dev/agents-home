@@ -29,7 +29,7 @@ export const TeamCard: React.FC<TeamCardProps> = ({
   onSelectTeam,
   onModeChange,
 }) => {
-  const { setActiveTeam, updateSystem, deleteCustomSystem, selectedAgentSetId } = useTeamStore();
+  const { setActiveTeam, updateSystem, deleteCustomSystem, selectedAgentSetId, hideSystem } = useTeamStore();
   const scene = useSceneManager();
   const colorInputRef = useRef<HTMLInputElement>(null);
 
@@ -116,7 +116,7 @@ export const TeamCard: React.FC<TeamCardProps> = ({
   const handleDelete = (e: React.MouseEvent) => {
     e.stopPropagation();
     setShowDeleteConfirm(true);
-    setErrorMsg('Delete this team?');
+    setErrorMsg(isPredefined ? 'Hide this team?' : 'Delete this team?');
   };
 
   const confirmDelete = (e: React.MouseEvent) => {
@@ -125,7 +125,11 @@ export const TeamCard: React.FC<TeamCardProps> = ({
       scene?.resetScene();
       setActiveTeam(DEFAULT_AGENTIC_SET_ID);
     }
-    deleteCustomSystem(system.id);
+    if (isPredefined) {
+      hideSystem(system.id);
+    } else {
+      deleteCustomSystem(system.id);
+    }
     onModeChange('view');
   };
 
@@ -332,7 +336,7 @@ export const TeamCard: React.FC<TeamCardProps> = ({
               {isEditing && (
                 <button onClick={handleDelete} className="flex items-center gap-1.5 px-2 py-1 text-red-500 hover:bg-red-50 rounded-lg text-[8px] font-black uppercase tracking-widest transition-all">
                   <Trash2 size={12} />
-                  Delete Team
+                  {isPredefined ? 'Hide Team' : 'Delete Team'}
                 </button>
               )}
             </div>
